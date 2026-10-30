@@ -37,6 +37,7 @@ class DivisionRoleAssignment(models.Model):
     class Role(models.TextChoices):
         ADMIN = "division_admin", "แอดมินกองงาน"
         DIRECTOR = "division_director", "ผู้อำนวยการกองงาน"
+        USERS = "division_user", "ผู้ใช้งานทั่่วไป"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -71,8 +72,8 @@ class DivisionRoleAssignment(models.Model):
     class Meta:
         ordering = ["division__code", "role", "user__username"]
 
-        verbose_name = "บทบาทประจำแผนก"
-        verbose_name_plural = "บทบาทประจำแผนก"
+        verbose_name = "หน้าที่ประจำกองงาน"
+        verbose_name_plural = "หน้าที่ประจำกองงาน"
 
         constraints = [
             models.UniqueConstraint(

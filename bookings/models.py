@@ -1,3 +1,4 @@
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -7,31 +8,49 @@ class BookingRequest(models.Model):
 
     class Status(models.TextChoices):
         DRAFT = "draft", "แบบร่าง"
-        PENDING_REVIEW = "pending_review", "รอการพิจารณา"
+
+        PENDING_REVIEW = (
+            "pending_review",
+            "รอแอดมินพิจารณา",
+        )
+
         PENDING_SIGNATURE = (
             "pending_signature",
             "รอหัวหน้าแผนกลงนาม",
         )
-        APPROVED = "approved", "อนุมัติครบตามคำขอ"
+
+        APPROVED = (
+            "approved",
+            "อนุมัติครบตามคำขอ",
+        )
+
         PARTIALLY_APPROVED = (
             "partially_approved",
             "อนุมัติบางรายชื่อ",
         )
-        REJECTED = "rejected", "ปฏิเสธคำขอ"
-        CANCELLED = "cancelled", "ยกเลิก"
+
+        REJECTED = (
+            "rejected",
+            "ปฏิเสธคำขอ",
+        )
+
+        CANCELLED = (
+            "cancelled",
+            "ยกเลิก",
+        )
 
     requesting_division = models.ForeignKey(
         "organization.Divisions",
         on_delete=models.PROTECT,
         related_name="outgoing_booking_requests",
-        verbose_name="กองงานผู้ขอ",
+        verbose_name="แผนกผู้ขอ",
     )
 
     source_division = models.ForeignKey(
         "organization.Divisions",
         on_delete=models.PROTECT,
         related_name="incoming_booking_requests",
-        verbose_name="กองงานต้นสังกัด",
+        verbose_name="แผนกต้นสังกัดพนักงาน",
     )
 
     requested_by = models.ForeignKey(
@@ -42,15 +61,11 @@ class BookingRequest(models.Model):
     )
 
     purpose = models.TextField(
-        verbose_name="เหตุผลในการขอใช้ชื่อ",
+        verbose_name="เหตุผลในการขอใช้พนักงาน",
     )
 
-    start_at = models.DateTimeField(
-        verbose_name="วันเวลาเริ่มใช้งาน",
-    )
-
-    end_at = models.DateTimeField(
-        verbose_name="วันเวลาสิ้นสุดการใช้งาน",
+    booking_date = models.DateField(
+        verbose_name="วันที่ต้องการใช้พนักงาน",
     )
 
     status = models.CharField(
@@ -72,13 +87,12 @@ class BookingRequest(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
         verbose_name = "คำขอยืมพนักงาน"
         verbose_name_plural = "คำขอยืมพนักงาน"
 
     def clean(self):
         super().clean()
-
-        errors = {}
 
         if (
             self.requesting_division_id
@@ -86,22 +100,12 @@ class BookingRequest(models.Model):
             and self.requesting_division_id
             == self.source_division_id
         ):
-            errors["source_division"] = (
-                "กองงานผู้ขอต้องไม่ใช่กองงานต้นสังกัด "
-                "ของกำลังพลที่ต้องการยืม"
-            )
-
-        if (
-            self.start_at
-            and self.end_at
-            and self.end_at <= self.start_at
-        ):
-            errors["end_at"] = (
-                "วันเวลาสิ้นสุดต้องอยู่หลังวันเวลาเริ่มต้น"
-            )
-
-        if errors:
-            raise ValidationError(errors)
+            raise ValidationError({
+                "source_division": (
+                    "แผนกผู้ขอต้องไม่ใช่แผนกต้นสังกัด "
+                    "ของพนักงานที่ต้องการยืม"
+                )
+            })
 
     def __str__(self):
         return (
@@ -114,22 +118,28 @@ class BookingRequest(models.Model):
 class BookingRequestItem(models.Model):
 
     class Status(models.TextChoices):
+        DRAFT = "draft", "แบบร่าง"
+
         PENDING_REVIEW = (
             "pending_review",
             "รอแอดมินพิจารณา",
         )
+
         ACCEPTED = (
             "accepted",
             "แอดมินยอมรับ",
         )
+
         REJECTED = (
             "rejected",
             "แอดมินปฏิเสธ",
         )
+
         APPROVED = (
             "approved",
             "อนุมัติแล้ว",
         )
+
         CANCELLED = (
             "cancelled",
             "ยกเลิก",
@@ -144,18 +154,19 @@ class BookingRequestItem(models.Model):
 
     employee_code = models.CharField(
         max_length=30,
+        db_index=True,
         verbose_name="รหัสพนักงาน",
     )
 
     employee_name_snapshot = models.CharField(
         max_length=150,
-        verbose_name="ชื่อกำลังพล ณ เวลาที่ขอ",
+        verbose_name="ชื่อพนักงาน ณ เวลาที่ขอ",
     )
 
     status = models.CharField(
         max_length=30,
         choices=Status.choices,
-        default=Status.PENDING_REVIEW,
+        default=Status.DRAFT,
         verbose_name="สถานะรายชื่อ",
     )
 
@@ -186,12 +197,16 @@ class BookingRequestItem(models.Model):
 
     class Meta:
         ordering = ["employee_code"]
+
         verbose_name = "รายชื่อในคำขอ"
         verbose_name_plural = "รายชื่อในคำขอ"
 
         constraints = [
             models.UniqueConstraint(
-                fields=["booking_request", "employee_code"],
+                fields=[
+                    "booking_request",
+                    "employee_code",
+                ],
                 name="uniq_employee_per_booking_request",
             ),
         ]
@@ -200,4 +215,50 @@ class BookingRequestItem(models.Model):
         return (
             f"{self.employee_code} - "
             f"{self.employee_name_snapshot}"
+        )
+
+
+class EmployeeBookingReservation(models.Model):
+
+    booking_request_item = models.OneToOneField(
+        BookingRequestItem,
+        on_delete=models.CASCADE,
+        related_name="reservation",
+        verbose_name="รายการจอง",
+    )
+
+    employee_code = models.CharField(
+        max_length=30,
+        verbose_name="รหัสพนักงาน",
+    )
+
+    booking_date = models.DateField(
+        verbose_name="วันที่ถูกจอง",
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="วันที่สร้างรายการจอง",
+    )
+
+    class Meta:
+        ordering = ["booking_date", "employee_code"]
+
+        verbose_name = "รายการกันสิทธิ์การจอง"
+        verbose_name_plural = "รายการกันสิทธิ์การจอง"
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "employee_code",
+                    "booking_date",
+                ],
+                name="uniq_employee_booking_date",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.employee_code} - "
+            f"{self.booking_date}"
         )
