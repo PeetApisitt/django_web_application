@@ -1,6 +1,5 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
-
 from .models import (
     BookingRequest,
     BookingRequestItem,
