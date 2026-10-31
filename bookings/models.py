@@ -1,4 +1,3 @@
-
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -8,36 +7,12 @@ class BookingRequest(models.Model):
 
     class Status(models.TextChoices):
         DRAFT = "draft", "แบบร่าง"
-
-        PENDING_REVIEW = (
-            "pending_review",
-            "รอแอดมินพิจารณา",
-        )
-
-        PENDING_SIGNATURE = (
-            "pending_signature",
-            "รอหัวหน้าแผนกลงนาม",
-        )
-
-        APPROVED = (
-            "approved",
-            "อนุมัติครบตามคำขอ",
-        )
-
-        PARTIALLY_APPROVED = (
-            "partially_approved",
-            "อนุมัติบางรายชื่อ",
-        )
-
-        REJECTED = (
-            "rejected",
-            "ปฏิเสธคำขอ",
-        )
-
-        CANCELLED = (
-            "cancelled",
-            "ยกเลิก",
-        )
+        PENDING_REVIEW = "pending_review", "รอแอดมินพิจารณา"
+        PENDING_SIGNATURE = "pending_signature", "รอหัวหน้าแผนกลงนาม"
+        APPROVED = "approved", "อนุมัติครบตามคำขอ"
+        PARTIALLY_APPROVED = "partially_approved", "อนุมัติบางรายชื่อ"
+        REJECTED = "rejected", "ปฏิเสธคำขอ"
+        CANCELLED = "cancelled", "ยกเลิก"
 
     requesting_division = models.ForeignKey(
         "organization.Divisions",
@@ -75,6 +50,34 @@ class BookingRequest(models.Model):
         verbose_name="สถานะคำขอ",
     )
 
+    # --- ฟิลด์ที่เพิ่มใหม่สำหรับ E-signature Workflow ---
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="approved_booking_requests",
+        verbose_name="ผู้อนุมัติ (หัวหน้าแผนก)",
+    )
+
+    approved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="วันที่อนุมัติ",
+    )
+
+    approval_note = models.TextField(
+        blank=True,
+        verbose_name="หมายเหตุการอนุมัติ",
+    )
+
+    signature_text = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name="หลักฐานลายมือชื่ออิเล็กทรอนิกส์",
+    )
+    # -----------------------------------------------
+
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="วันที่สร้างคำขอ",
@@ -87,13 +90,11 @@ class BookingRequest(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
-
         verbose_name = "คำขอยืมพนักงาน"
         verbose_name_plural = "คำขอยืมพนักงาน"
 
     def clean(self):
         super().clean()
-
         if (
             self.requesting_division_id
             and self.source_division_id
@@ -119,31 +120,11 @@ class BookingRequestItem(models.Model):
 
     class Status(models.TextChoices):
         DRAFT = "draft", "แบบร่าง"
-
-        PENDING_REVIEW = (
-            "pending_review",
-            "รอแอดมินพิจารณา",
-        )
-
-        ACCEPTED = (
-            "accepted",
-            "แอดมินยอมรับ",
-        )
-
-        REJECTED = (
-            "rejected",
-            "แอดมินปฏิเสธ",
-        )
-
-        APPROVED = (
-            "approved",
-            "อนุมัติแล้ว",
-        )
-
-        CANCELLED = (
-            "cancelled",
-            "ยกเลิก",
-        )
+        PENDING_REVIEW = "pending_review", "รอแอดมินพิจารณา"
+        ACCEPTED = "accepted", "แอดมินยอมรับ"
+        REJECTED = "rejected", "แอดมินปฏิเสธ"
+        APPROVED = "approved", "อนุมัติแล้ว"
+        CANCELLED = "cancelled", "ยกเลิก"
 
     booking_request = models.ForeignKey(
         BookingRequest,
@@ -197,10 +178,8 @@ class BookingRequestItem(models.Model):
 
     class Meta:
         ordering = ["employee_code"]
-
         verbose_name = "รายชื่อในคำขอ"
         verbose_name_plural = "รายชื่อในคำขอ"
-
         constraints = [
             models.UniqueConstraint(
                 fields=[
@@ -212,10 +191,7 @@ class BookingRequestItem(models.Model):
         ]
 
     def __str__(self):
-        return (
-            f"{self.employee_code} - "
-            f"{self.employee_name_snapshot}"
-        )
+        return f"{self.employee_code} - {self.employee_name_snapshot}"
 
 
 class EmployeeBookingReservation(models.Model):
@@ -243,10 +219,8 @@ class EmployeeBookingReservation(models.Model):
 
     class Meta:
         ordering = ["booking_date", "employee_code"]
-
         verbose_name = "รายการกันสิทธิ์การจอง"
         verbose_name_plural = "รายการกันสิทธิ์การจอง"
-
         constraints = [
             models.UniqueConstraint(
                 fields=[
@@ -258,7 +232,4 @@ class EmployeeBookingReservation(models.Model):
         ]
 
     def __str__(self):
-        return (
-            f"{self.employee_code} - "
-            f"{self.booking_date}"
-        )
+        return f"{self.employee_code} - {self.booking_date}"
