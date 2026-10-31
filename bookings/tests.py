@@ -15,7 +15,6 @@ from .models import (
 from .services import (
     submit_booking_request, 
     review_booking_item,
-    approve_booking_request,
     cancel_booking_request,
     get_accessible_booking_requests,
     can_view_booking_request
@@ -52,10 +51,10 @@ class DailyBookingTests(TestCase):
 
         self.booking_date = timezone.localdate() + timedelta(days=1)
 
-    def create_request(self, requesting_division, employee_code, booking_date=None, requested_by=None):
+    def create_request(self, requesting_division, employee_code, booking_date=None, requested_by=None, source_division=None):
         request = BookingRequest.objects.create(
             requesting_division=requesting_division,
-            source_division=self.division_b,
+            source_division=source_division or self.division_b,
             requested_by=requested_by or self.user,
             purpose="งานสำคัญประจำแผนก",
             booking_date=(booking_date or self.booking_date),
@@ -117,8 +116,32 @@ class DailyBookingTests(TestCase):
         with self.assertRaises(ValidationError):
             submit_booking_request(request.pk)
 
+    def test_internal_booking_auto_approve(self):
+        # แผนกผู้ขอ และ แผนกต้นสังกัด คือ division_b เหมือนกัน
+        request = self.create_request(
+            requesting_division=self.division_b, 
+            employee_code="INT001",
+            requested_by=self.admin_b,
+            source_division=self.division_b
+        )
+        result = submit_booking_request(request.pk)
+        
+        # คำขอหลักต้องถูก APPROVED ทันที
+        self.assertEqual(result.status, BookingRequest.Status.APPROVED)
+        
+        item = result.items.first()
+        self.assertEqual(item.status, BookingRequestItem.Status.APPROVED)
+        self.assertEqual(item.reviewed_by, self.admin_b)
+        
+        # Reservation ต้องถูกสร้างไว้กันสิทธิ์
+        self.assertTrue(
+            EmployeeBookingReservation.objects.filter(
+                employee_code="INT001", booking_date=self.booking_date
+            ).exists()
+        )
+
     # ----------------------------------------------------
-    # Review Workflow & Auto-Evaluation Tests
+    # Review Workflow & Auto-Evaluation Tests (No E-Signature)
     # ----------------------------------------------------
 
     def test_review_item_accept_success(self):
@@ -128,32 +151,8 @@ class DailyBookingTests(TestCase):
         review_booking_item(item.pk, self.admin_b, "ACCEPT")
         
         request.refresh_from_db()
-        self.assertEqual(request.status, BookingRequest.Status.PENDING_SIGNATURE)
-
-    def test_evaluate_status_all_rejected(self):
-        request = self.create_multi_item_request(self.division_a, ["EMP20", "EMP21"])
-        submit_booking_request(request.pk)
-        item1 = request.items.get(employee_code="EMP20")
-        item2 = request.items.get(employee_code="EMP21")
-        review_booking_item(item1.pk, self.admin_b, "REJECT", "note")
-        review_booking_item(item2.pk, self.admin_b, "REJECT", "note")
-        request.refresh_from_db()
-        self.assertEqual(request.status, BookingRequest.Status.REJECTED)
-
-    # ----------------------------------------------------
-    # Phase 3: Review Workflow & Auto-Evaluation Tests 
-    # ----------------------------------------------------
-
-    def test_review_item_accept_success(self):
-        request = self.create_request(self.division_a, "EMP001")
-        submit_booking_request(request.pk)
-        item = request.items.first()
-        review_booking_item(item.pk, self.admin_b, "ACCEPT")
-        
-        request.refresh_from_db()
-        # มีคนเดียวและ Accept ไปแล้ว สถานะต้องจบที่ APPROVED ทันที
         self.assertEqual(request.status, BookingRequest.Status.APPROVED)
-        # สถานะรายชื่อต้องเปลี่ยนจาก ACCEPTED เป็น APPROVED อัตโนมัติ
+        
         item.refresh_from_db()
         self.assertEqual(item.status, BookingRequestItem.Status.APPROVED)
 
@@ -177,7 +176,6 @@ class DailyBookingTests(TestCase):
         review_booking_item(item2.pk, self.admin_b, "REJECT", "note")
         
         request.refresh_from_db()
-        # ผ่านแค่บางคน สถานะต้องเป็น PARTIALLY_APPROVED ทันที
         self.assertEqual(request.status, BookingRequest.Status.PARTIALLY_APPROVED)
 
     # ----------------------------------------------------
@@ -214,38 +212,30 @@ class DailyBookingTests(TestCase):
     # ----------------------------------------------------
 
     def test_authorization_visibility_rules(self):
-        # สร้างคำขอโดย self.user ส่งไปที่ แผนก B
         req1 = self.create_request(self.division_a, "AUTH01", requested_by=self.user)
-        # สร้างคำขอโดย self.other_user ส่งไปที่ แผนก B
         req2 = self.create_request(self.division_a, "AUTH02", requested_by=self.other_user)
 
-        # 1. ผู้สร้างคำขอต้องเห็นแค่ของตัวเอง
         user_reqs = get_accessible_booking_requests(self.user)
         self.assertIn(req1, user_reqs)
         self.assertNotIn(req2, user_reqs)
         self.assertTrue(can_view_booking_request(self.user, req1.pk))
         self.assertFalse(can_view_booking_request(self.user, req2.pk))
 
-        # 2. Admin แผนกปลายทาง (B) ต้องเห็นทั้งหมดที่ส่งมาแผนกตัวเอง
         admin_reqs = get_accessible_booking_requests(self.admin_b)
         self.assertIn(req1, admin_reqs)
         self.assertIn(req2, admin_reqs)
         self.assertTrue(can_view_booking_request(self.admin_b, req1.pk))
 
-        # 3. Director แผนกปลายทาง (B) ต้องเห็นทั้งหมดที่ส่งมาแผนกตัวเอง
         director_reqs = get_accessible_booking_requests(self.director_b)
         self.assertIn(req1, director_reqs)
         self.assertIn(req2, director_reqs)
         self.assertTrue(can_view_booking_request(self.director_b, req1.pk))
 
-        # 4. Superuser ต้องเห็นทั้งหมด
         super_reqs = get_accessible_booking_requests(self.superuser)
         self.assertIn(req1, super_reqs)
         self.assertIn(req2, super_reqs)
         self.assertTrue(can_view_booking_request(self.superuser, req1.pk))
 
-        # 5. User อื่นที่ไม่เกี่ยวข้อง ต้องไม่เห็นคำขอใดๆ ที่ไม่ได้สร้างเอง
-        # (สมมติสร้าง User ใหม่ที่ไม่มีคำขอเลย)
         third_user = User.objects.create_user(username="third", password="pwd")
         third_reqs = get_accessible_booking_requests(third_user)
         self.assertEqual(third_reqs.count(), 0)

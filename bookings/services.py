@@ -11,7 +11,6 @@ from .models import (
     EmployeeBookingReservation,
 )
 
-# ประกาศตัวแปร logger สำหรับแอป bookings
 logger = logging.getLogger(__name__)
 
 
@@ -32,11 +31,8 @@ def submit_booking_request(request_id):
     if not booking_request.booking_date:
         raise ValidationError("กรุณาระบุวันที่ต้องการใช้พนักงาน")
 
-    if (
-        booking_request.requesting_division_id
-        == booking_request.source_division_id
-    ):
-        raise ValidationError("ไม่สามารถขอยืมพนักงานจากแผนกเดียวกันได้")
+    # ปลดล็อกเงื่อนไขที่ห้ามแผนกเดียวกันออก เพื่อรองรับการจองใช้ภายใน
+    is_internal_booking = (booking_request.requesting_division_id == booking_request.source_division_id)
 
     items = list(
         BookingRequestItem.objects
@@ -73,10 +69,18 @@ def submit_booking_request(request_id):
             )
 
         item.employee_code = code
-        item.status = BookingRequestItem.Status.PENDING_REVIEW
-        item.reviewed_by = None
-        item.reviewed_at = None
-        item.review_note = ""
+        
+        # หากเป็นการจองภายในแผนก ให้อนุมัติอัตโนมัติทันที
+        if is_internal_booking:
+            item.status = BookingRequestItem.Status.APPROVED
+            item.reviewed_by = booking_request.requested_by
+            item.reviewed_at = timezone.now()
+            item.review_note = "จองใช้ภายในแผนก (อนุมัติอัตโนมัติ)"
+        else:
+            item.status = BookingRequestItem.Status.PENDING_REVIEW
+            item.reviewed_by = None
+            item.reviewed_at = None
+            item.review_note = ""
 
         item.save(
             update_fields=[
@@ -88,11 +92,15 @@ def submit_booking_request(request_id):
             ]
         )
 
-    booking_request.status = BookingRequest.Status.PENDING_REVIEW
-    booking_request.save(update_fields=["status", "updated_at"])
+    # เปลี่ยนสถานะคำขอหลักตามประเภทการจอง
+    if is_internal_booking:
+        booking_request.status = BookingRequest.Status.APPROVED
+        logger.info(f"BookingRequest [{booking_request.pk}] AUTO-APPROVED (Internal Booking by User [{booking_request.requested_by_id}])")
+    else:
+        booking_request.status = BookingRequest.Status.PENDING_REVIEW
+        logger.info(f"BookingRequest [{booking_request.pk}] SUBMITTED by User [{booking_request.requested_by_id}]")
 
-    # Logging: บันทึกการส่งคำขอสำเร็จ
-    logger.info(f"BookingRequest [{booking_request.pk}] SUBMITTED by User [{booking_request.requested_by_id}]")
+    booking_request.save(update_fields=["status", "updated_at"])
 
     return booking_request
 
@@ -125,7 +133,6 @@ def evaluate_booking_request_status(request_id):
     if has_pending:
         return booking_request
 
-    # สรุปสถานะคำขอหลัก
     if approved_count > 0 and rejected_count == 0:
         booking_request.status = BookingRequest.Status.APPROVED
     elif approved_count > 0 and rejected_count > 0:
@@ -133,7 +140,6 @@ def evaluate_booking_request_status(request_id):
     else:
         booking_request.status = BookingRequest.Status.REJECTED
 
-    # อัปเดตสถานะของ Items จาก ACCEPTED เป็น APPROVED
     if approved_count > 0:
         for item in items:
             if item.status == BookingRequestItem.Status.ACCEPTED:
@@ -141,8 +147,6 @@ def evaluate_booking_request_status(request_id):
                 item.save(update_fields=['status'])
 
     booking_request.save(update_fields=['status', 'updated_at'])
-    
-    # Logging: บันทึกการประเมินสถานะอัตโนมัติ
     logger.info(f"BookingRequest [{booking_request.pk}] AUTO-EVALUATED to status: {booking_request.status}")
     
     return booking_request
@@ -172,7 +176,6 @@ def review_booking_item(item_id, reviewer, action, note=""):
     ).exists()
 
     if not is_admin:
-        # Logging: บันทึกความพยายามละเมิดสิทธิ์ (Warning)
         logger.warning(f"UNAUTHORIZED REVIEW ATTEMPT on Item [{item.pk}] by User [{reviewer.pk}]")
         raise PermissionDenied("คุณไม่มีสิทธิ์ในการพิจารณาคำขอของแผนกต้นสังกัดนี้")
 
@@ -202,11 +205,8 @@ def review_booking_item(item_id, reviewer, action, note=""):
         ]
     )
 
-    # Logging: บันทึกการพิจารณา
     logger.info(f"BookingItem [{item.pk}] {action} by Admin [{reviewer.pk}]")
-
     evaluate_booking_request_status(item.booking_request_id)
-
     return item
 
 
@@ -218,7 +218,6 @@ def cancel_booking_request(request_id, requested_user):
         raise ValidationError("ไม่พบคำขอจองที่ระบุ")
 
     if booking_request.requested_by != requested_user:
-        # Logging: บันทึกความพยายามละเมิดสิทธิ์ (Warning)
         logger.warning(f"UNAUTHORIZED CANCEL ATTEMPT on Request [{booking_request.pk}] by User [{requested_user.pk}]")
         raise PermissionDenied("คุณไม่มีสิทธิ์ยกเลิกคำขอนี้ (ต้องเป็นผู้สร้างคำขอเท่านั้น)")
 
@@ -238,20 +237,15 @@ def cancel_booking_request(request_id, requested_user):
     booking_request.status = BookingRequest.Status.CANCELLED
     booking_request.save(update_fields=['status', 'updated_at'])
 
-    # Logging: บันทึกการยกเลิกคำขอ
     logger.info(f"BookingRequest [{booking_request.pk}] CANCELLED by User [{requested_user.pk}]")
-
     return booking_request
 
-
-# --- Phase 5: Authentication and Authorization Services ---
 
 def get_accessible_booking_requests(user):
     if user.is_superuser:
         return BookingRequest.objects.all()
 
     q_requested_by = Q(requested_by=user)
-
     user_managed_divisions = DivisionRoleAssignment.objects.filter(
         user=user,
         is_active=True,
@@ -259,7 +253,6 @@ def get_accessible_booking_requests(user):
     ).values_list('division_id', flat=True)
 
     q_source_division = Q(source_division_id__in=user_managed_divisions)
-
     return BookingRequest.objects.filter(q_requested_by | q_source_division).distinct()
 
 

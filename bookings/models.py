@@ -50,7 +50,6 @@ class BookingRequest(models.Model):
         verbose_name="สถานะคำขอ",
     )
 
-    # --- ฟิลด์ที่เพิ่มใหม่สำหรับ E-signature Workflow ---
     approved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -76,7 +75,6 @@ class BookingRequest(models.Model):
         blank=True,
         verbose_name="หลักฐานลายมือชื่ออิเล็กทรอนิกส์",
     )
-    # -----------------------------------------------
 
     created_at = models.DateTimeField(
         auto_now_add=True,
@@ -95,18 +93,7 @@ class BookingRequest(models.Model):
 
     def clean(self):
         super().clean()
-        if (
-            self.requesting_division_id
-            and self.source_division_id
-            and self.requesting_division_id
-            == self.source_division_id
-        ):
-            raise ValidationError({
-                "source_division": (
-                    "แผนกผู้ขอต้องไม่ใช่แผนกต้นสังกัด "
-                    "ของพนักงานที่ต้องการยืม"
-                )
-            })
+        # ปลดล็อกเงื่อนไขที่ห้าม requesting_division == source_division ออก เพื่อให้จองภายในแผนกได้
 
     def __str__(self):
         return (
