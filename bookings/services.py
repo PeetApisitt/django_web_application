@@ -1,3 +1,4 @@
+import logging
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.db import transaction
 from django.db.models import Q
@@ -9,6 +10,9 @@ from .models import (
     BookingRequestItem,
     EmployeeBookingReservation,
 )
+
+# ประกาศตัวแปร logger สำหรับแอป bookings
+logger = logging.getLogger(__name__)
 
 
 @transaction.atomic
@@ -87,6 +91,9 @@ def submit_booking_request(request_id):
     booking_request.status = BookingRequest.Status.PENDING_REVIEW
     booking_request.save(update_fields=["status", "updated_at"])
 
+    # Logging: บันทึกการส่งคำขอสำเร็จ
+    logger.info(f"BookingRequest [{booking_request.pk}] SUBMITTED by User [{booking_request.requested_by_id}]")
+
     return booking_request
 
 
@@ -100,27 +107,44 @@ def evaluate_booking_request_status(request_id):
     if booking_request.status != BookingRequest.Status.PENDING_REVIEW:
         return booking_request
 
-    items = booking_request.items.all()
+    items = list(booking_request.items.all())
     
     has_pending = False
-    has_accepted = False
+    approved_count = 0
+    rejected_count = 0
 
     for item in items:
         if item.status == BookingRequestItem.Status.PENDING_REVIEW:
             has_pending = True
             break
         elif item.status == BookingRequestItem.Status.ACCEPTED:
-            has_accepted = True
+            approved_count += 1
+        elif item.status == BookingRequestItem.Status.REJECTED:
+            rejected_count += 1
 
     if has_pending:
         return booking_request
 
-    if has_accepted:
-        booking_request.status = BookingRequest.Status.PENDING_SIGNATURE
+    # สรุปสถานะคำขอหลัก
+    if approved_count > 0 and rejected_count == 0:
+        booking_request.status = BookingRequest.Status.APPROVED
+    elif approved_count > 0 and rejected_count > 0:
+        booking_request.status = BookingRequest.Status.PARTIALLY_APPROVED
     else:
         booking_request.status = BookingRequest.Status.REJECTED
 
+    # อัปเดตสถานะของ Items จาก ACCEPTED เป็น APPROVED
+    if approved_count > 0:
+        for item in items:
+            if item.status == BookingRequestItem.Status.ACCEPTED:
+                item.status = BookingRequestItem.Status.APPROVED
+                item.save(update_fields=['status'])
+
     booking_request.save(update_fields=['status', 'updated_at'])
+    
+    # Logging: บันทึกการประเมินสถานะอัตโนมัติ
+    logger.info(f"BookingRequest [{booking_request.pk}] AUTO-EVALUATED to status: {booking_request.status}")
+    
     return booking_request
 
 
@@ -148,6 +172,8 @@ def review_booking_item(item_id, reviewer, action, note=""):
     ).exists()
 
     if not is_admin:
+        # Logging: บันทึกความพยายามละเมิดสิทธิ์ (Warning)
+        logger.warning(f"UNAUTHORIZED REVIEW ATTEMPT on Item [{item.pk}] by User [{reviewer.pk}]")
         raise PermissionDenied("คุณไม่มีสิทธิ์ในการพิจารณาคำขอของแผนกต้นสังกัดนี้")
 
     if action not in ["ACCEPT", "REJECT"]:
@@ -176,71 +202,12 @@ def review_booking_item(item_id, reviewer, action, note=""):
         ]
     )
 
+    # Logging: บันทึกการพิจารณา
+    logger.info(f"BookingItem [{item.pk}] {action} by Admin [{reviewer.pk}]")
+
     evaluate_booking_request_status(item.booking_request_id)
 
     return item
-
-
-@transaction.atomic
-def approve_booking_request(request_id, director, signature_text, note=""):
-    try:
-        booking_request = BookingRequest.objects.select_for_update().get(pk=request_id)
-    except BookingRequest.DoesNotExist:
-        raise ValidationError("ไม่พบคำขอจองที่ระบุ")
-
-    if booking_request.status != BookingRequest.Status.PENDING_SIGNATURE:
-        raise ValidationError("ไม่สามารถอนุมัติได้ (คำขอไม่ได้อยู่ในสถานะรอลงนาม)")
-
-    if not signature_text or not signature_text.strip():
-        raise ValidationError("กรุณาระบุข้อมูลลายมือชื่ออิเล็กทรอนิกส์ (E-signature)")
-
-    is_director = DivisionRoleAssignment.objects.filter(
-        user=director,
-        division=booking_request.source_division,
-        role=DivisionRoleAssignment.Role.DIRECTOR,
-        is_active=True
-    ).exists()
-
-    if not is_director:
-        raise PermissionDenied("คุณไม่มีสิทธิ์ในการอนุมัติคำขอของแผนกต้นสังกัดนี้")
-
-    items = BookingRequestItem.objects.select_for_update().filter(booking_request=booking_request)
-    
-    approved_count = 0
-    rejected_count = 0
-
-    for item in items:
-        if item.status == BookingRequestItem.Status.ACCEPTED:
-            item.status = BookingRequestItem.Status.APPROVED
-            item.save(update_fields=['status'])
-            approved_count += 1
-        elif item.status == BookingRequestItem.Status.REJECTED:
-            rejected_count += 1
-
-    if approved_count > 0 and rejected_count == 0:
-        booking_request.status = BookingRequest.Status.APPROVED
-    elif approved_count > 0 and rejected_count > 0:
-        booking_request.status = BookingRequest.Status.PARTIALLY_APPROVED
-    else:
-        booking_request.status = BookingRequest.Status.REJECTED
-
-    booking_request.approved_by = director
-    booking_request.approved_at = timezone.now()
-    booking_request.approval_note = note.strip() if note else ""
-    booking_request.signature_text = signature_text.strip()
-    
-    booking_request.save(
-        update_fields=[
-            'status', 
-            'approved_by', 
-            'approved_at', 
-            'approval_note', 
-            'signature_text', 
-            'updated_at'
-        ]
-    )
-
-    return booking_request
 
 
 @transaction.atomic
@@ -251,6 +218,8 @@ def cancel_booking_request(request_id, requested_user):
         raise ValidationError("ไม่พบคำขอจองที่ระบุ")
 
     if booking_request.requested_by != requested_user:
+        # Logging: บันทึกความพยายามละเมิดสิทธิ์ (Warning)
+        logger.warning(f"UNAUTHORIZED CANCEL ATTEMPT on Request [{booking_request.pk}] by User [{requested_user.pk}]")
         raise PermissionDenied("คุณไม่มีสิทธิ์ยกเลิกคำขอนี้ (ต้องเป็นผู้สร้างคำขอเท่านั้น)")
 
     if booking_request.status in [
@@ -269,22 +238,20 @@ def cancel_booking_request(request_id, requested_user):
     booking_request.status = BookingRequest.Status.CANCELLED
     booking_request.save(update_fields=['status', 'updated_at'])
 
+    # Logging: บันทึกการยกเลิกคำขอ
+    logger.info(f"BookingRequest [{booking_request.pk}] CANCELLED by User [{requested_user.pk}]")
+
     return booking_request
 
 
 # --- Phase 5: Authentication and Authorization Services ---
 
 def get_accessible_booking_requests(user):
-    """
-    ดึงข้อมูลคำขอยืมพนักงานทั้งหมดที่ผู้ใช้งานมีสิทธิ์มองเห็น
-    """
     if user.is_superuser:
         return BookingRequest.objects.all()
 
-    # 1. สิทธิ์ในฐานะผู้ขอยืม (เห็นคำขอที่ตัวเองเป็นคนสร้าง)
     q_requested_by = Q(requested_by=user)
 
-    # 2. สิทธิ์ในฐานะ Admin หรือ Director ของแผนกต้นสังกัด (เห็นคำขอที่ส่งมาที่แผนก)
     user_managed_divisions = DivisionRoleAssignment.objects.filter(
         user=user,
         is_active=True,
@@ -297,9 +264,6 @@ def get_accessible_booking_requests(user):
 
 
 def can_view_booking_request(user, request_id):
-    """
-    ตรวจสอบสิทธิ์ว่าผู้ใช้งานสามารถดูรายละเอียดคำขอนี้ได้หรือไม่
-    """
     try:
         booking_request = BookingRequest.objects.get(pk=request_id)
     except BookingRequest.DoesNotExist:

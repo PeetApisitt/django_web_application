@@ -141,50 +141,44 @@ class DailyBookingTests(TestCase):
         self.assertEqual(request.status, BookingRequest.Status.REJECTED)
 
     # ----------------------------------------------------
-    # Phase 3: E-signature & Approval Workflow Tests
+    # Phase 3: Review Workflow & Auto-Evaluation Tests 
     # ----------------------------------------------------
 
-    def test_director_approval_success_all_approved(self):
-        request = self.create_multi_item_request(self.division_a, ["SIG01", "SIG02"])
+    def test_review_item_accept_success(self):
+        request = self.create_request(self.division_a, "EMP001")
         submit_booking_request(request.pk)
-        for item in request.items.all():
-            review_booking_item(item.pk, self.admin_b, "ACCEPT")
-            
-        approved_req = approve_booking_request(
-            request_id=request.pk,
-            director=self.director_b,
-            signature_text="HASHED_SIGNATURE_KEY",
-            note="อนุมัติตามเสนอ"
-        )
-        self.assertEqual(approved_req.status, BookingRequest.Status.APPROVED)
-        self.assertTrue(all(item.status == BookingRequestItem.Status.APPROVED for item in approved_req.items.all()))
-
-    def test_director_approval_success_partially_approved(self):
-        request = self.create_multi_item_request(self.division_a, ["SIG03", "SIG04"])
-        submit_booking_request(request.pk)
-        item1 = request.items.get(employee_code="SIG03")
-        item2 = request.items.get(employee_code="SIG04")
-        review_booking_item(item1.pk, self.admin_b, "ACCEPT")
-        review_booking_item(item2.pk, self.admin_b, "REJECT", "ติดภารกิจ")
+        item = request.items.first()
+        review_booking_item(item.pk, self.admin_b, "ACCEPT")
         
-        approved_req = approve_booking_request(request.pk, self.director_b, "SIGNATURE")
-        self.assertEqual(approved_req.status, BookingRequest.Status.PARTIALLY_APPROVED)
+        request.refresh_from_db()
+        # มีคนเดียวและ Accept ไปแล้ว สถานะต้องจบที่ APPROVED ทันที
+        self.assertEqual(request.status, BookingRequest.Status.APPROVED)
+        # สถานะรายชื่อต้องเปลี่ยนจาก ACCEPTED เป็น APPROVED อัตโนมัติ
+        item.refresh_from_db()
+        self.assertEqual(item.status, BookingRequestItem.Status.APPROVED)
 
-    def test_director_approval_unauthorized(self):
-        request = self.create_request(self.division_a, "SIG05")
+    def test_evaluate_status_all_rejected(self):
+        request = self.create_multi_item_request(self.division_a, ["EMP20", "EMP21"])
         submit_booking_request(request.pk)
-        item = request.items.first()
-        review_booking_item(item.pk, self.admin_b, "ACCEPT")
-        with self.assertRaises(PermissionDenied):
-            approve_booking_request(request.pk, self.admin_b, "SIGNATURE")
+        item1 = request.items.get(employee_code="EMP20")
+        item2 = request.items.get(employee_code="EMP21")
+        review_booking_item(item1.pk, self.admin_b, "REJECT", "note")
+        review_booking_item(item2.pk, self.admin_b, "REJECT", "note")
+        request.refresh_from_db()
+        self.assertEqual(request.status, BookingRequest.Status.REJECTED)
 
-    def test_director_approval_missing_signature(self):
-        request = self.create_request(self.division_a, "SIG06")
+    def test_evaluate_status_mixed_accepted_and_rejected(self):
+        request = self.create_multi_item_request(self.division_a, ["EMP40", "EMP41"])
         submit_booking_request(request.pk)
-        item = request.items.first()
-        review_booking_item(item.pk, self.admin_b, "ACCEPT")
-        with self.assertRaises(ValidationError):
-            approve_booking_request(request.pk, self.director_b, "")
+        item1 = request.items.get(employee_code="EMP40")
+        item2 = request.items.get(employee_code="EMP41")
+        
+        review_booking_item(item1.pk, self.admin_b, "ACCEPT")
+        review_booking_item(item2.pk, self.admin_b, "REJECT", "note")
+        
+        request.refresh_from_db()
+        # ผ่านแค่บางคน สถานะต้องเป็น PARTIALLY_APPROVED ทันที
+        self.assertEqual(request.status, BookingRequest.Status.PARTIALLY_APPROVED)
 
     # ----------------------------------------------------
     # Phase 4: Cancellation and Reservation Release Tests

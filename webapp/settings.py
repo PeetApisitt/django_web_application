@@ -130,3 +130,42 @@ MAILERS = {
     },
 }
 AUTH_USER_MODEL = "accounts.User"
+
+# --- Logging Configuration ---
+import os
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} | {asctime} | {module} | {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} | {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+        'file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': BASE_DIR / 'bookings.log',
+            'maxBytes': 1024 * 1024 * 5,  # ตัดไฟล์ใหม่ทุกๆ 5 MB
+            'backupCount': 5,             # เก็บย้อนหลัง 5 ไฟล์
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'bookings': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+    },
+}
