@@ -101,6 +101,7 @@ class BookingRequestAdmin(admin.ModelAdmin):
                 "requested_by",
                 "purpose",
                 "booking_date",
+                "end_date",
                 "status",
                 "created_at",
                 "updated_at",

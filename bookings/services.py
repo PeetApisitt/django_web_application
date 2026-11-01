@@ -72,12 +72,12 @@ def submit_booking_request(request_id):
                     booking_date=b_date,
                     defaults={"booking_request_item": item},
                 )
-            )
+                )
 
-        if not created and reservation.booking_request_item_id != item.pk:
-            raise ValidationError(
-                f"พนักงาน {code} ถูกจองแล้วในวันที่ {b_date}"
-            )
+            if not created and reservation.booking_request_item_id != item.pk:
+                raise ValidationError(
+                    f"พนักงาน {code} ถูกจองแล้วในวันที่ {b_date}"
+                )
 
         item.employee_code = code
         

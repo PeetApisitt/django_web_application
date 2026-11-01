@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from ninja import NinjaAPI, ModelSchema, Schema
 from ninja.security import django_auth
 from django.core.exceptions import ValidationError, PermissionDenied
@@ -38,7 +38,7 @@ class ReviewActionSchema(Schema):
 
 class MessageSchema(Schema):
     message: str
-    status: str = None
+    status: Optional[str] = None
 
 class ErrorSchema(Schema):
     error: str
@@ -52,7 +52,7 @@ class CreateBookingIn(Schema):
     source_division_id: int
     purpose: str
     booking_date: date
-    end_date: date = None
+    end_date: Optional[date] = None
     items: List[CreateItemIn]
 
 # ==========================================
@@ -108,6 +108,8 @@ def cancel_booking(request, request_id: int):
 def create_booking(request, payload: CreateBookingIn):
     """สร้างคำขอยืมพนักงานใหม่ (ระบบจะบันทึกเป็นฉบับร่าง DRAFT อัตโนมัติ)"""
     try:
+        if payload.end_date and payload.end_date < payload.booking_date:
+            return 400, {"error": "วันสิ้นสุดการใช้งานต้องไม่ก่อนวันเริ่มต้น"}
         booking = BookingRequest.objects.create(
             requesting_division_id=payload.requesting_division_id,
             source_division_id=payload.source_division_id,

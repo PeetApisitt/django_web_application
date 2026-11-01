@@ -240,3 +240,87 @@ class DailyBookingTests(TestCase):
         third_reqs = get_accessible_booking_requests(third_user)
         self.assertEqual(third_reqs.count(), 0)
         self.assertFalse(can_view_booking_request(third_user, req1.pk))
+
+    # ----------------------------------------------------
+    # Multi-day Booking Tests
+    # ----------------------------------------------------
+
+    def test_multi_day_booking_creates_reservations_for_all_days(self):
+        start_date = self.booking_date
+        end_date = start_date + timedelta(days=2)  # จองรวม 3 วัน
+
+        request = BookingRequest.objects.create(
+            requesting_division=self.division_a,
+            source_division=self.division_b,
+            requested_by=self.user,
+            purpose="งานต่อเนื่อง 3 วัน",
+            booking_date=start_date,
+            end_date=end_date,
+        )
+        item = BookingRequestItem.objects.create(
+            booking_request=request,
+            employee_code="MULTI001",
+            employee_name_snapshot="Multi-day Employee",
+        )
+
+        result = submit_booking_request(request.pk)
+        self.assertEqual(result.status, BookingRequest.Status.PENDING_REVIEW)
+
+        reservations = EmployeeBookingReservation.objects.filter(
+            booking_request_item=item,
+            employee_code="MULTI001",
+        ).order_by("booking_date")
+
+        # ตรวจสอบว่าถูกสร้างขึ้นมา 3 แถว (3 records)
+        self.assertEqual(reservations.count(), 3)
+
+        # ตรวจสอบว่าวันที่ในแต่ละแถวตรงกับทั้ง 3 วันที่จอง
+        expected_dates = [
+            start_date,
+            start_date + timedelta(days=1),
+            start_date + timedelta(days=2),
+        ]
+        actual_dates = list(reservations.values_list("booking_date", flat=True))
+        self.assertEqual(actual_dates, expected_dates)
+
+    # ----------------------------------------------------
+    # Multi-day Booking Tests
+    # ----------------------------------------------------
+
+    def test_multi_day_booking_creates_reservations_for_all_days(self):
+        start_date = self.booking_date
+        end_date = start_date + timedelta(days=2)  # จองรวม 3 วัน
+
+        request = BookingRequest.objects.create(
+            requesting_division=self.division_a,
+            source_division=self.division_b,
+            requested_by=self.user,
+            purpose="งานต่อเนื่อง 3 วัน",
+            booking_date=start_date,
+            end_date=end_date,
+        )
+        item = BookingRequestItem.objects.create(
+            booking_request=request,
+            employee_code="MULTI001",
+            employee_name_snapshot="Multi-day Employee",
+        )
+
+        result = submit_booking_request(request.pk)
+        self.assertEqual(result.status, BookingRequest.Status.PENDING_REVIEW)
+
+        reservations = EmployeeBookingReservation.objects.filter(
+            booking_request_item=item,
+            employee_code="MULTI001",
+        ).order_by("booking_date")
+
+        # ตรวจสอบว่าถูกสร้างขึ้นมา 3 แถว (3 records)
+        self.assertEqual(reservations.count(), 3)
+
+        # ตรวจสอบว่าวันที่ในแต่ละแถวตรงกับทั้ง 3 วันที่จอง
+        expected_dates = [
+            start_date,
+            start_date + timedelta(days=1),
+            start_date + timedelta(days=2),
+        ]
+        actual_dates = list(reservations.values_list("booking_date", flat=True))
+        self.assertEqual(actual_dates, expected_dates)

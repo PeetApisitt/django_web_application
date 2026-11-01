@@ -66,3 +66,27 @@ INFO | 2026-10-31 19:13:31,878 | services | BookingRequest [1] SUBMITTED by User
 INFO | 2026-10-31 19:13:31,880 | services | BookingItem [1] ACCEPT by Admin [2]
 INFO | 2026-10-31 19:13:31,882 | services | BookingRequest [1] AUTO-EVALUATED to status: approved
 INFO | 2026-10-31 19:13:32,690 | services | BookingRequest [1] SUBMITTED by User [1]
+INFO | 2026-11-01 16:05:54,382 | services | BookingRequest [1] SUBMITTED by User [1]
+INFO | 2026-11-01 16:05:54,385 | services | BookingRequest [2] SUBMITTED by User [1]
+INFO | 2026-11-01 16:05:55,782 | services | BookingRequest [1] SUBMITTED by User [1]
+INFO | 2026-11-01 16:05:55,785 | services | BookingItem [1] REJECT by Admin [2]
+INFO | 2026-11-01 16:05:55,787 | services | BookingRequest [1] AUTO-EVALUATED to status: rejected
+INFO | 2026-11-01 16:05:57,211 | services | BookingRequest [1] SUBMITTED by User [1]
+INFO | 2026-11-01 16:05:57,214 | services | BookingRequest [1] CANCELLED by User [1]
+INFO | 2026-11-01 16:05:58,593 | services | BookingRequest [1] SUBMITTED by User [1]
+WARNING | 2026-11-01 16:05:58,595 | services | UNAUTHORIZED CANCEL ATTEMPT on Request [1] by User [2]
+INFO | 2026-11-01 16:05:59,979 | services | BookingRequest [1] SUBMITTED by User [1]
+INFO | 2026-11-01 16:06:01,396 | services | BookingRequest [1] SUBMITTED by User [1]
+INFO | 2026-11-01 16:06:01,400 | services | BookingItem [1] REJECT by Admin [2]
+INFO | 2026-11-01 16:06:01,403 | services | BookingItem [2] REJECT by Admin [2]
+INFO | 2026-11-01 16:06:01,405 | services | BookingRequest [1] AUTO-EVALUATED to status: rejected
+INFO | 2026-11-01 16:06:02,804 | services | BookingRequest [1] SUBMITTED by User [1]
+INFO | 2026-11-01 16:06:02,808 | services | BookingItem [1] ACCEPT by Admin [2]
+INFO | 2026-11-01 16:06:02,816 | services | BookingItem [2] REJECT by Admin [2]
+INFO | 2026-11-01 16:06:02,825 | services | BookingRequest [1] AUTO-EVALUATED to status: partially_approved
+INFO | 2026-11-01 16:06:04,299 | services | BookingRequest [1] AUTO-APPROVED (Internal Booking by User [2])
+INFO | 2026-11-01 16:06:05,707 | services | BookingRequest [1] SUBMITTED by User [1]
+INFO | 2026-11-01 16:06:08,473 | services | BookingRequest [1] SUBMITTED by User [1]
+INFO | 2026-11-01 16:06:08,476 | services | BookingItem [1] ACCEPT by Admin [2]
+INFO | 2026-11-01 16:06:08,478 | services | BookingRequest [1] AUTO-EVALUATED to status: approved
+INFO | 2026-11-01 16:06:09,867 | services | BookingRequest [1] SUBMITTED by User [1]
