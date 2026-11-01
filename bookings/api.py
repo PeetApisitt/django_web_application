@@ -3,7 +3,8 @@ from ninja import NinjaAPI, ModelSchema, Schema
 from ninja.security import django_auth
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.shortcuts import get_object_or_404
-
+from datetime import date
+from django.db import transaction
 from .models import BookingRequest, BookingRequestItem
 from .services import (
     get_accessible_booking_requests,
@@ -42,6 +43,16 @@ class MessageSchema(Schema):
 class ErrorSchema(Schema):
     error: str
 
+class CreateItemIn(Schema):
+    employee_code: str
+    employee_name_snapshot: str
+
+class CreateBookingIn(Schema):
+    requesting_division_id: int
+    source_division_id: int
+    purpose: str
+    booking_date: date
+    items: List[CreateItemIn]
 # ==========================================
 # 2. Endpoints (เส้นทาง API)
 # ==========================================
@@ -89,3 +100,28 @@ def cancel_booking(request, request_id: int):
         return 403, {"error": str(e)}
     except ValidationError as e:
         return 400, {"error": str(e.message if hasattr(e, 'message') else e)}
+    
+@api.post("/bookings/", response={201: MessageSchema, 400: ErrorSchema})
+@transaction.atomic
+def create_booking(request, payload: CreateBookingIn):
+    """สร้างคำขอยืมพนักงานใหม่ (ระบบจะบันทึกเป็นฉบับร่าง DRAFT อัตโนมัติ)"""
+    try:
+        booking = BookingRequest.objects.create(
+            requesting_division_id=payload.requesting_division_id,
+            source_division_id=payload.source_division_id,
+            requested_by=request.user,
+            purpose=payload.purpose,
+            booking_date=payload.booking_date,
+            status=BookingRequest.Status.DRAFT
+        )
+        
+        for item in payload.items:
+            BookingRequestItem.objects.create(
+                booking_request=booking,
+                employee_code=item.employee_code,
+                employee_name_snapshot=item.employee_name_snapshot,
+                status=BookingRequestItem.Status.DRAFT
+            )
+        return 201, {"message": f"สร้างคำขอแบบร่างสำเร็จ (ID: {booking.id})", "status": booking.status}
+    except Exception as e:
+        return 400, {"error": str(e)}

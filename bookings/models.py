@@ -65,16 +65,16 @@ class BookingRequest(models.Model):
         verbose_name="วันที่อนุมัติ",
     )
 
-    approval_note = models.TextField(
-        blank=True,
-        verbose_name="หมายเหตุการอนุมัติ",
-    )
+    #approval_note = models.TextField(
+    #    blank=True,
+    #    verbose_name="หมายเหตุการอนุมัติ",
+    #)
 
-    signature_text = models.CharField(
-        max_length=255,
-        blank=True,
-        verbose_name="หลักฐานลายมือชื่ออิเล็กทรอนิกส์",
-    )
+    #signature_text = models.CharField(
+    #    max_length=255,
+    #    blank=True,
+    #    verbose_name="หลักฐานลายมือชื่ออิเล็กทรอนิกส์",
+    #)
 
     created_at = models.DateTimeField(
         auto_now_add=True,
