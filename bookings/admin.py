@@ -7,7 +7,6 @@ from .models import (
     EmployeeBookingReservation,
 )
 
-
 class BookingRequestItemInline(admin.TabularInline):
 
     model = BookingRequestItem
@@ -60,6 +59,7 @@ class BookingRequestAdmin(admin.ModelAdmin):
         "requesting_division",
         "source_division",
         "booking_date",
+        "end_date",
         "status",
         "requested_by",
         "created_at",

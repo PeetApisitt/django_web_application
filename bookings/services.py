@@ -3,6 +3,7 @@ from django.core.exceptions import ValidationError, PermissionDenied
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
+from datetime import timedelta
 
 from organization.models import DivisionRoleAssignment
 from .models import (
@@ -54,18 +55,28 @@ def submit_booking_request(request_id):
     if len(employee_codes) != len(set(employee_codes)):
         raise ValidationError("พบรหัสพนักงานซ้ำภายในคำขอเดียวกัน")
 
+    start_date = booking_request.booking_date
+    end_date = booking_request.end_date or start_date
+
+    if end_date < start_date:
+        raise ValidationError("วันสิ้นสุดการใช้งานต้องไม่ก่อนวันเริ่มต้น")
+
+    delta = end_date - start_date
+    booking_dates = [start_date + timedelta(days=i) for i in range(delta.days + 1)]
+
     for item, code in zip(items, employee_codes):
-        reservation, created = (
-            EmployeeBookingReservation.objects.get_or_create(
-                employee_code=code,
-                booking_date=booking_request.booking_date,
-                defaults={"booking_request_item": item},
+        for b_date in booking_dates:
+            reservation, created = (
+                EmployeeBookingReservation.objects.get_or_create(
+                    employee_code=code,
+                    booking_date=b_date,
+                    defaults={"booking_request_item": item},
+                )
             )
-        )
 
         if not created and reservation.booking_request_item_id != item.pk:
             raise ValidationError(
-                f"พนักงาน {code} ถูกจองแล้วในวันที่ {booking_request.booking_date}"
+                f"พนักงาน {code} ถูกจองแล้วในวันที่ {b_date}"
             )
 
         item.employee_code = code

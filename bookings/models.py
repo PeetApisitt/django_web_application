@@ -40,7 +40,12 @@ class BookingRequest(models.Model):
     )
 
     booking_date = models.DateField(
-        verbose_name="วันที่ต้องการใช้พนักงาน",
+        verbose_name="วันเริ่มต้นใช้งาน",
+    )
+    end_date = models.DateField(
+        verbose_name="วันสิ้นสุดการใช้งาน",
+        null=True,
+        blank=True,
     )
 
     status = models.CharField(
@@ -93,6 +98,8 @@ class BookingRequest(models.Model):
 
     def clean(self):
         super().clean()
+        if self.end_date and self.end_date < self.booking_date:
+            raise ValidationError("วันสิ้นสุดการใช้งานต้องไม่ก่อนวันเริ่มต้น")
         # ปลดล็อกเงื่อนไขที่ห้าม requesting_division == source_division ออก เพื่อให้จองภายในแผนกได้
 
     def __str__(self):
@@ -183,12 +190,12 @@ class BookingRequestItem(models.Model):
 
 class EmployeeBookingReservation(models.Model):
 
-    booking_request_item = models.OneToOneField(
+    booking_request_item = models.ForeignKey( # เปลี่ยนจาก OneToOneField
         BookingRequestItem,
         on_delete=models.CASCADE,
-        related_name="reservation",
+        related_name="reservations",
         verbose_name="รายการจอง",
-    )
+    )   
 
     employee_code = models.CharField(
         max_length=30,

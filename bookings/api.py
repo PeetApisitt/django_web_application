@@ -30,7 +30,7 @@ class BookingRequestSchema(ModelSchema):
     
     class Meta:
         model = BookingRequest
-        fields = ['id', 'requesting_division', 'source_division', 'requested_by', 'purpose', 'booking_date', 'status']
+        fields = ['id', 'requesting_division', 'source_division', 'requested_by', 'purpose', 'booking_date', 'end_date', 'status']
 
 class ReviewActionSchema(Schema):
     action: str
@@ -52,7 +52,9 @@ class CreateBookingIn(Schema):
     source_division_id: int
     purpose: str
     booking_date: date
+    end_date: date = None
     items: List[CreateItemIn]
+
 # ==========================================
 # 2. Endpoints (เส้นทาง API)
 # ==========================================
@@ -112,6 +114,7 @@ def create_booking(request, payload: CreateBookingIn):
             requested_by=request.user,
             purpose=payload.purpose,
             booking_date=payload.booking_date,
+            end_date=payload.end_date,
             status=BookingRequest.Status.DRAFT
         )
         
