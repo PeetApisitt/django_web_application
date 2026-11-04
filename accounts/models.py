@@ -9,3 +9,9 @@ class User(AbstractUser):
         blank=True,
         verbose_name="รหัสพนักงาน",
     )
+    position = models.CharField(
+        max_length=150,
+        blank=True,
+        null=True,
+        verbose_name="ตำแหน่ง",
+    )
