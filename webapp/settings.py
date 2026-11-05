@@ -21,12 +21,19 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-pe7(203#)l6+zqijgq3*iprw7p%^phn9my3p3l6ei%^uk0w(3_'
+SECRET_KEY = os.environ.get(
+    'SECRET_KEY',
+    'django-insecure-pe7(203#)l6+zqijgq3*iprw7p%^phn9my3p3l6ei%^uk0w(3_'
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'True').lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0').split(',')
+    if host.strip()
+]
 
 
 # Application definition
@@ -39,6 +46,9 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
+    # Third-party Apps
+    'corsheaders',
+
     # Custom App
     'accounts',
     'organization',
@@ -47,12 +57,34 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+# --- CORS & CSRF Configuration (สำหรับเชื่อมต่อ React Frontend) ---
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        'CORS_ALLOWED_ORIGINS',
+        'http://localhost:5173,http://localhost:3000'
+    ).split(',')
+    if origin.strip()
+]
+
+CORS_ALLOW_CREDENTIALS = True
+
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        'CSRF_TRUSTED_ORIGINS',
+        'http://localhost:5173,http://localhost:3000'
+    ).split(',')
+    if origin.strip()
 ]
 
 ROOT_URLCONF = 'webapp.urls'
@@ -138,8 +170,6 @@ MAILERS = {
 AUTH_USER_MODEL = "accounts.User"
 
 # --- Logging Configuration ---
-import os
-
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,

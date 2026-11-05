@@ -72,7 +72,7 @@ def submit_booking_request(request_id):
                     booking_date=b_date,
                     defaults={"booking_request_item": item},
                 )
-                )
+            )
 
             if not created and reservation.booking_request_item_id != item.pk:
                 raise ValidationError(
@@ -152,10 +152,9 @@ def evaluate_booking_request_status(request_id):
         booking_request.status = BookingRequest.Status.REJECTED
 
     if approved_count > 0:
-        for item in items:
-            if item.status == BookingRequestItem.Status.ACCEPTED:
-                item.status = BookingRequestItem.Status.APPROVED
-                item.save(update_fields=['status'])
+        booking_request.items.filter(
+            status=BookingRequestItem.Status.ACCEPTED
+        ).update(status=BookingRequestItem.Status.APPROVED)
 
     booking_request.save(update_fields=['status', 'updated_at'])
     logger.info(f"BookingRequest [{booking_request.pk}] AUTO-EVALUATED to status: {booking_request.status}")
@@ -239,11 +238,12 @@ def cancel_booking_request(request_id, requested_user):
         raise ValidationError(f"ไม่สามารถยกเลิกคำขอที่อยู่ในสถานะ '{booking_request.get_status_display()}' ได้")
 
     items = BookingRequestItem.objects.select_for_update().filter(booking_request=booking_request)
-    
-    for item in items:
-        item.status = BookingRequestItem.Status.CANCELLED
-        item.save(update_fields=['status'])
-        EmployeeBookingReservation.objects.filter(booking_request_item=item).delete()
+
+    # ลบรายการจองทั้งหมดของคำขอนี้ และอัปเดตสถานะรายชื่อพนักงานแบบรวดเดียว (Bulk Query)
+    EmployeeBookingReservation.objects.filter(
+        booking_request_item__booking_request=booking_request
+    ).delete()
+    items.update(status=BookingRequestItem.Status.CANCELLED)
 
     booking_request.status = BookingRequest.Status.CANCELLED
     booking_request.save(update_fields=['status', 'updated_at'])
@@ -253,8 +253,14 @@ def cancel_booking_request(request_id, requested_user):
 
 
 def get_accessible_booking_requests(user):
+    base_qs = BookingRequest.objects.select_related(
+        "requesting_division",
+        "source_division",
+        "requested_by",
+    ).prefetch_related("items")
+
     if user.is_superuser:
-        return BookingRequest.objects.all()
+        return base_qs.all()
 
     q_requested_by = Q(requested_by=user)
     user_managed_divisions = DivisionRoleAssignment.objects.filter(
@@ -264,7 +270,7 @@ def get_accessible_booking_requests(user):
     ).values_list('division_id', flat=True)
 
     q_source_division = Q(source_division_id__in=user_managed_divisions)
-    return BookingRequest.objects.filter(q_requested_by | q_source_division).distinct()
+    return base_qs.filter(q_requested_by | q_source_division).distinct()
 
 
 def can_view_booking_request(user, request_id):
